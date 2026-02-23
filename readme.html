@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>README 浏览</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 24px; line-height: 1.7; background: #f8fafc; }
+    .container { max-width: 920px; margin: 0 auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; box-shadow: 0 1px 3px rgba(15,23,42,0.06); padding: 20px; }
+    .md h1 { font-size: 28px; margin: 0 0 12px; }
+    .md h2 { font-size: 22px; margin: 24px 0 10px; border-left: 3px solid #4b8bf4; padding-left: 8px; }
+    .md h3 { font-size: 18px; margin: 18px 0 8px; }
+    .md p, .md li { color: #334155; margin: 8px 0; }
+    .md pre { background: #f7f8fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; overflow: auto; line-height: 1.4; }
+    .md code { font-family: ui-monospace, Menlo, Monaco, Consolas, "Courier New"; background: #f1f5f9; border-radius: 6px; padding: 2px 6px; }
+    .md a { color: #2563eb; text-decoration: none; }
+    .md a:hover { text-decoration: underline; }
+    .homebtn { position: fixed; top: 12px; left: 12px; background: #4b8bf4; color: #fff; border: none; border-radius: 16px; padding: 6px 10px; font-size: 12px; text-decoration: none; box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+  </style>
+</head>
+<body>
+  <a class="homebtn" href="./index.html">返回上一级</a>
+  <div class="container">
+    <div id="content" class="md">正在加载 README.md ...</div>
+  </div>
+  <script>
+    async function loadMD(){
+      try{
+        const res = await fetch('./README.md');
+        const text = await res.text();
+        document.getElementById('content').innerHTML = mdToHtml(text);
+      }catch(e){
+        document.getElementById('content').textContent = '未找到 README.md：' + (e && e.message ? e.message : '');
+      }
+    }
+    function esc(s){ s = (s == null) ? '' : String(s); return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+    function mdToHtml(md){
+      let out = md.replace(/\r/g, '');
+      out = out.replace(/\n[\t ]*\n[\t ]*(\n[\t ]*)+/g, '\n\n');
+      function compressBlank(s){ return String(s).replace(/\n[\t ]*\n[\t ]*(\n[\t ]*)+/g, '\n\n'); }
+      out = out.replace(/```([\s\S]*?)```/g, (m, p1)=> '<pre><code>' + esc(compressBlank(String(p1))) + '</code></pre>');
+      out = out.replace(/`([^`]+)`/g, '<code>$1</code>');
+      out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+      out = out.replace(/^######\s*(.*)$/gm, '<h6>$1</h6>')
+               .replace(/^#####\s*(.*)$/gm, '<h5>$1</h5>')
+               .replace(/^####\s*(.*)$/gm, '<h4>$1</h4>')
+               .replace(/^###\s*(.*)$/gm, '<h3>$1</h3>')
+               .replace(/^##\s*(.*)$/gm, '<h2>$1</h2>')
+               .replace(/^#\s*(.*)$/gm, '<h1>$1</h1>');
+      out = out.replace(/^[\t ]*\-\s+(.*)$/gm, '<li>$1</li>');
+      out = out.split('\n').map(line => {
+        if (/^\s*$/.test(line)) return '';
+        if (/^\s*<\/?(h\d|pre|ul|ol|li|code|strong|a)/.test(line)) return line;
+        return line;
+      }).join('\n');
+      out = out.replace(/(?:<li>[\s\S]*?<\/li>\n?)+/g, m => '<ul>\n' + m + '\n</ul>');
+      return out;
+    }
+    loadMD();
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,23 @@
+#Intellij idea
+.idea/
+.vscode/
+.vercel/
+.data/
+*.ipr
+*.iml
+*.iws
+# system ignore
+.DS_Store
+Thumbs.db
+
+#package file
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+*.exe
+*.ApiDoc.json
+
+./test
