@@ -16,29 +16,157 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
+var (
+	ApiPath     string
+	Envs        []string
+	RootDirMap  map[string]string
+	DocDir      string // 文档生成路径
+	MaxBranches int    //进一月活跃分支数量
+	ConsulAddr  string // consul地址
+)
+
+func init() {
+	loadConfYAML()
+	if DocDir == "" || len(RootDirMap) == 0 {
+		panic("conf.yaml missing required fields: docDir/rootDirMap")
+	}
+}
+
 func main() {
+	docRun()
+}
+
+// Minimal YAML loader for current config schema without external deps
+func loadConfYAML() {
+	cwd, _ := os.Getwd()
+	// try current and two parent directories
+	tryDirs := []string{cwd, filepath.Dir(cwd), filepath.Dir(filepath.Dir(cwd))}
+	var data []byte
+	var err error
+	for _, d := range tryDirs {
+		p := filepath.Join(d, "conf.yaml")
+		if b, e := os.ReadFile(p); e == nil {
+			data = b
+			err = nil
+			break
+		} else {
+			err = e
+		}
+	}
+	if err != nil || len(data) == 0 {
+		return
+	}
+	var cfg struct {
+		ApiPath     string            `yaml:"ApiPath"`
+		Envs        []string          `yaml:"Envs"`
+		RootDirMap  map[string]string `yaml:"RootDirMap"`
+		DocDir      string            `yaml:"DocDir"`
+		MaxBranches int               `yaml:"MaxBranches"`
+		ConsulAddr  string            `yaml:"ConsulAddr"`
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return
+	}
+	ApiPath = strings.TrimSpace(cfg.ApiPath)
+	DocDir = strings.TrimSpace(cfg.DocDir)
+	ConsulAddr = strings.TrimSpace(cfg.ConsulAddr)
+	MaxBranches = cfg.MaxBranches
+	Envs = append([]string{}, cfg.Envs...)
+	RootDirMap = map[string]string{}
+	for k, v := range cfg.RootDirMap {
+		k = strings.TrimSpace(k)
+		v = strings.TrimSpace(v)
+		if k != "" && v != "" {
+			RootDirMap[k] = v
+		}
+	}
+}
+
+func splitTopKV(line string) (string, string, bool) {
+	i := strings.Index(line, ":")
+	if i <= 0 {
+		return "", "", false
+	}
+	k := strings.TrimSpace(line[:i])
+	v := strings.TrimSpace(line[i+1:])
+	v = stripInlineComment(v)
+	v = trimQuotes(v)
+	return k, v, true
+}
+
+func splitKeyVal(line string) (string, string, bool) {
+	i := strings.Index(line, ":")
+	if i <= 0 {
+		return "", "", false
+	}
+	k := strings.TrimSpace(line[:i])
+	k = trimQuotes(k)
+	v := strings.TrimSpace(line[i+1:])
+	v = stripInlineComment(v)
+	v = trimQuotes(v)
+	if k == "" || v == "" {
+		return "", "", false
+	}
+	return k, v, true
+}
+
+func trimQuotes(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+func stripInlineComment(s string) string {
+	inSingle := false
+	inDouble := false
+	for i, r := range s {
+		switch r {
+		case '\'':
+			if !inDouble {
+				inSingle = !inSingle
+			}
+		case '"':
+			if !inSingle {
+				inDouble = !inDouble
+			}
+		case '#':
+			if !inSingle && !inDouble {
+				return strings.TrimSpace(s[:i])
+			}
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+func docRun() {
 	if wd, _ := os.Getwd(); wd != "" {
-		_ = os.MkdirAll(docDir, 0o755)
+		_ = os.MkdirAll(DocDir, 0o755)
 		mdSrc := filepath.Join(wd, "README.md")
 		htmlSrc := filepath.Join(wd, "readme.html")
 		if b, err := os.ReadFile(mdSrc); err == nil {
-			_ = os.WriteFile(filepath.Join(docDir, "README.md"), b, 0o644)
+			_ = os.WriteFile(filepath.Join(DocDir, "README.md"), b, 0o644)
 		} else {
 			fmt.Println("[WARN] 读取 doc/README.md 失败：", err)
 		}
 		if b, err := os.ReadFile(htmlSrc); err == nil {
-			_ = os.WriteFile(filepath.Join(docDir, "readme.html"), b, 0o644)
+			_ = os.WriteFile(filepath.Join(DocDir, "readme.html"), b, 0o644)
 		} else {
 			fmt.Println("[WARN] 读取 doc/readme.html 失败：", err)
 		}
 	}
 	var rootItems [][2]string
 	type projectItem struct{ Name, Link, Latest string }
-	for name, root := range rootDirMap {
+	for name, root := range RootDirMap {
 		groupKey := deriveGroupKey(root)
-		groupDir := filepath.Join(docDir, groupKey)
+		groupDir := filepath.Join(DocDir, groupKey)
 		_ = os.MkdirAll(groupDir, 0o755)
 		var items []projectItem
 		entries, _ := os.ReadDir(root)
@@ -153,7 +281,7 @@ func main() {
 					} else {
 						pathBase = filepath.Base(root)
 					}
-					out.ApiDir = pathBase + "/" + projectName + apiPath
+					out.ApiDir = pathBase + "/" + projectName + ApiPath
 
 					if out.Proto != "" {
 						out.Proto = pathBase + "/" + projectName + "/" + out.Proto
@@ -216,7 +344,7 @@ func main() {
 						}
 					}
 
-					_, _, err = writeProjectFiles(docDir, groupKey, projectName, branch, *out)
+					_, _, err = writeProjectFiles(DocDir, groupKey, projectName, branch, *out)
 					if err != nil {
 						fmt.Println("[ERROR]", projectName, branch, err)
 						return
@@ -306,7 +434,7 @@ func main() {
 	rnav = strings.ReplaceAll(rnav, "{brand}", "API 文档导航")
 	rnav = strings.ReplaceAll(rnav, "{readme_link}", "readme.html")
 	rnav = strings.ReplaceAll(rnav, "{homebtn}", "")
-	os.WriteFile(filepath.Join(docDir, "index.html"), []byte(rnav), 0o644)
+	os.WriteFile(filepath.Join(DocDir, "index.html"), []byte(rnav), 0o644)
 }
 
 type Field struct {
@@ -1589,7 +1717,7 @@ func writeProjectFiles(docDir, groupKey, projectName, branchName string, out Pro
 		return "", "", err
 	}
 	page := strings.ReplaceAll(fullPageTemplate, "__DOC_JSON__", docName)
-	page = strings.ReplaceAll(page, "__CONSUL_ADDR__", consulAddr)
+	page = strings.ReplaceAll(page, "__CONSUL_ADDR__", ConsulAddr)
 
 	injection := fmt.Sprintf("<script>window.CURRENT_BRANCH = '%s'; window.PATH_PREFIX = '%s'; window.GROUP_INDEX = '%s';</script>\n<script>", branchName, pathPrefix, groupIndex)
 	page = strings.Replace(page, "<script>", injection, 1)
@@ -1770,7 +1898,7 @@ func buildProject(root, projectName string) *ProjectDoc {
 		}
 		return strings.ToLower(devs[i]["name"].(string)) < strings.ToLower(devs[j]["name"].(string))
 	})
-	out.Stats = map[string]interface{}{"total": len(out.Methods), "categories": cats, "category_total": len(cats), "developers": devs, "developer_total": len(devs), "envs": envs}
+	out.Stats = map[string]interface{}{"total": len(out.Methods), "categories": cats, "category_total": len(cats), "developers": devs, "developer_total": len(devs), "envs": Envs}
 	return &out
 }
 

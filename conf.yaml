@@ -1,0 +1,10 @@
+ApiPath: "/api"
+Envs:
+  - "localhost"
+  - "woda-alpha"
+  - "woda-sit"
+RootDirMap: #项目根路径
+ "企微": "/Users/jeff/Desktop/service"
+DocDir: "/Users/jeff/myself/doc/ProtoDocDiff_index2" #文档生成路径
+MaxBranches: 5 #进一月活跃分支数量
+ConsulAddr: "http://192.168.150.9:8080/ConsulRun" #Consul转发 地址
