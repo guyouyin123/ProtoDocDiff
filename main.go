@@ -35,11 +35,12 @@ func main() {
 		}
 	}
 	var rootItems [][2]string
+	type projectItem struct{ Name, Link, Latest string }
 	for name, root := range rootDirMap {
 		groupKey := deriveGroupKey(root)
 		groupDir := filepath.Join(docDir, groupKey)
 		_ = os.MkdirAll(groupDir, 0o755)
-		var items [][2]string
+		var items []projectItem
 		entries, _ := os.ReadDir(root)
 		for _, e := range entries {
 			// Skip hidden dirs or common non-project dirs at the top level
@@ -251,12 +252,30 @@ func main() {
 				defaultBranch = branches[0].Name
 			}
 			link := projectName + "/" + defaultBranch + "/index.html"
-			items = append(items, [2]string{projectName, link})
+			// compute latest commit time among recent active branches
+			latest := ""
+			var latestT time.Time
+			for _, b := range branches {
+				if strings.TrimSpace(b.Date) == "" {
+					continue
+				}
+				if t, err := time.Parse("2006-01-02 15:04:05", b.Date); err == nil {
+					if t.After(latestT) {
+						latestT = t
+						latest = b.Date
+					}
+				}
+			}
+			items = append(items, projectItem{Name: projectName, Link: link, Latest: latest})
 		}
-		sort.Slice(items, func(i, j int) bool { return strings.ToLower(items[i][0]) < strings.ToLower(items[j][0]) })
+		sort.Slice(items, func(i, j int) bool { return strings.ToLower(items[i].Name) < strings.ToLower(items[j].Name) })
 		var sb strings.Builder
 		for _, it := range items {
-			sb.WriteString(fmt.Sprintf("<li><a href='%s'>%s</a></li>\n", it[1], it[0]))
+			if it.Latest != "" {
+				sb.WriteString(fmt.Sprintf("<li data-latest='%s'><a href='%s'>%s</a></li>\n", it.Latest, it.Link, it.Name))
+			} else {
+				sb.WriteString(fmt.Sprintf("<li><a href='%s'>%s</a></li>\n", it.Link, it.Name))
+			}
 		}
 		itemsHTML := sb.String()
 		if itemsHTML == "" {
@@ -267,6 +286,8 @@ func main() {
 		nav = strings.ReplaceAll(nav, "{brand}", brand)
 		nav = strings.ReplaceAll(nav, "{readme_link}", "../../readme.html")
 		nav = strings.ReplaceAll(nav, "{homebtn}", "<a class=\"homebtn\" href=\"../../index.html\">返回上一级</a>")
+		// Inject a small script to replace sub text with latest commit time for this group page only
+		nav = strings.Replace(nav, "</body>", "<script>(function(){var list=document.getElementById('list'); if(!list) return; Array.from(list.children).forEach(function(li){ var latest=li.getAttribute('data-latest'); if(latest){ var sub=li.querySelector('.sub'); if(sub){ sub.textContent='最近提交：'+latest; } } });})();</script></body>", 1)
 		os.WriteFile(filepath.Join(groupDir, "index.html"), []byte(nav), 0o644)
 		fmt.Printf("Generated %d project docs under %s\n", len(items), groupDir)
 		rootItems = append(rootItems, [2]string{name + " API文档导航", filepath.Join(groupKey, "index.html")})

@@ -9,7 +9,7 @@ var (
 
 	// 项目根目录
 	rootDirMap = map[string]string{
-		//"企微": "/Users/jeff/Desktop/service",
+		"企微": "/Users/jeff/Desktop/service",
 	}
 
 	// 文档输出目录
