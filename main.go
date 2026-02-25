@@ -19,7 +19,6 @@ import (
 )
 
 func main() {
-	// Copy README.md 和 readme.html 到 docDir（执行路径为 doc/）
 	if wd, _ := os.Getwd(); wd != "" {
 		_ = os.MkdirAll(docDir, 0o755)
 		mdSrc := filepath.Join(wd, "README.md")
@@ -79,13 +78,9 @@ func main() {
 			// Get branches
 			branches, err := getDocBranches(projPath)
 			if err != nil {
-				// Quietly ignore non-git directories or errors
-				// fmt.Println("[WARN] Failed to get branches for", projectName, err)
-				// Fallback to master if git fails
 				branches = []BranchInfo{{Name: "master", Date: ""}}
 			}
 
-			// Write branches.json to group/project/branches.json
 			projBaseDir := filepath.Join(groupDir, projectName)
 			_ = os.MkdirAll(projBaseDir, 0o755)
 
@@ -227,22 +222,6 @@ func main() {
 					}
 				}()
 			}
-
-			// Cleanup stale branches
-			// Walk the project dir to find branch directories that are not in keepDirs
-			// Note: Branch structure can be nested (feature/abc), so simple ReadDir is not enough.
-			// But since we know the exact paths we want to keep, we can iterate existing dirs?
-			// A simpler approach: Read immediate subdirs of projBaseDir.
-			// If it's "branches.json", keep it.
-			// If it matches first part of a valid branch, dive in?
-			// This is tricky with nested branches.
-			// Alternative: Since we only support specific branches, we can't easily "walk" to find stale ones without potentially deleting parent dirs of active branches.
-			//
-			// Simplified cleanup strategy:
-			// 1. We know 'branches.json' tells us what SHOULD exist.
-			// 2. We can try to walk the directory tree and identify leaf directories containing 'index.html'.
-			// 3. If that leaf dir corresponds to a branch NOT in keepDirs, delete it.
-
 			filepath.WalkDir(projBaseDir, func(path string, d os.DirEntry, err error) error {
 				if err != nil {
 					return nil
@@ -259,22 +238,14 @@ func main() {
 
 				// If this directory contains index.html, assume it's a generated doc root
 				if _, err := os.Stat(filepath.Join(path, "index.html")); err == nil {
-					// Check if this relative path matches any valid branch
-					// rel matches branch name (e.g. "feature/abc")
 					if !keepDirs[rel] {
 						// It's stale!
-						// fmt.Println("Removing stale branch doc:", rel)
 						os.RemoveAll(path)
 						return filepath.SkipDir // No need to go deeper
 					}
 				}
 				return nil
 			})
-			// Prune empty directories (optional, but good for cleanup)
-			// Can be done in a second pass or bottom-up walk.
-			// Skipping for now to avoid complexity.
-
-			// Determine default branch link
 			defaultBranch := "master"
 			if len(branches) > 0 {
 				defaultBranch = branches[0].Name
@@ -912,36 +883,6 @@ func parseTimeFlexible(s string) (time.Time, bool) {
 	}
 	return time.Time{}, false
 }
-
-func gitUpdateAuthors(repoDir, file string, line int) []string {
-	if line <= 0 {
-		return nil
-	}
-	s, err := runGit(repoDir, "log", "-L", fmt.Sprintf("%d,%d:%s", line, line, file), "--reverse", "--no-patch", "--format=%an")
-	if err != nil {
-		return nil
-	}
-	lines := strings.Split(strings.TrimSpace(s), "\n")
-	out := []string{}
-	seen := map[string]bool{}
-	skipped := false
-	for _, a := range lines {
-		a = strings.TrimSpace(a)
-		if a == "" {
-			continue
-		}
-		if !skipped {
-			skipped = true
-			continue
-		}
-		if !seen[a] {
-			out = append(out, a)
-			seen[a] = true
-		}
-	}
-	return out
-}
-
 func guessRespType(reqType string, structs map[string]StructInfo, goSources map[string]string) string {
 	if reqType == "" {
 		return ""
@@ -963,24 +904,6 @@ func guessRespType(reqType string, structs map[string]StructInfo, goSources map[
 		}
 	}
 	return ""
-}
-
-func extractAllRPC(protoText string) ([]map[string]string, string) {
-	var methods []map[string]string
-	svc := ""
-	if m := regexp.MustCompile(`(?m)^\s*service\s+(\w+)\s*\{`).FindStringSubmatch(protoText); len(m) > 1 {
-		svc = m[1]
-	}
-	re := regexp.MustCompile(`(?m)^\s*rpc\s+(\w+)\s*\(([^)]*)\)\s*returns\s*\(([^)]*)\).*`)
-	for _, mm := range re.FindAllStringSubmatch(protoText, -1) {
-		line := mm[0]
-		tail := ""
-		if tm := regexp.MustCompile(`//\s*(.*)$`).FindStringSubmatch(line); len(tm) > 1 {
-			tail = strings.TrimSpace(tm[1])
-		}
-		methods = append(methods, map[string]string{"name": mm[1], "req_type": strings.TrimSpace(mm[2]), "resp_type": strings.TrimSpace(mm[3]), "display_name": tail, "category": "未分类"})
-	}
-	return methods, svc
 }
 
 // parse proto categories and display names per rules
@@ -1620,8 +1543,6 @@ func setupWorktree(repoDir, branch string) (string, func(), error) {
 	}
 
 	cleanup := func() {
-		// git worktree remove --force <tmpDir>
-		// We need to run this from repoDir
 		runGit(repoDir, "worktree", "remove", "--force", tmpDir)
 		// Also remove dir just in case
 		os.RemoveAll(tmpDir)
@@ -1630,17 +1551,11 @@ func setupWorktree(repoDir, branch string) (string, func(), error) {
 }
 
 func writeProjectFiles(docDir, groupKey, projectName, branchName string, out ProjectDoc) (string, string, error) {
-	// For branches with slashes (e.g. feature/abc), os.MkdirAll creates nested dirs.
-	// But for the HTML/JS to work, we need to know how deep we are to find branches.json
-	// or to link back to the project root.
-
 	// Count slashes in branchName to determine depth
 	depth := strings.Count(branchName, "/") + 1
 	pathPrefix := strings.Repeat("../", depth)
 	// Force hardcoded value as requested by user
 	groupIndex := "../../index.html"
-	// Debug:
-	// fmt.Printf("Branch: %s, Depth: %d, PathPrefix: %s, GroupIndex: %s\n", branchName, depth, pathPrefix, groupIndex)
 
 	proj := filepath.Join(docDir, groupKey, projectName, branchName)
 	if err := os.MkdirAll(proj, 0o755); err != nil {

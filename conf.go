@@ -9,14 +9,11 @@ var (
 
 	// 项目根目录
 	rootDirMap = map[string]string{
-		// "项目名称1": "/Users/jeff/boy/xxx/services",
-		//"项目名称2":  "/Users/jeff/boy/xxx/services",
-		//"项目名称3": "/Users/jeff/boy/xxx/services",
-		"企微": "/Users/jeff/Desktop/service",
+		//"企微": "/Users/jeff/Desktop/service",
 	}
 
 	// 文档输出目录
-	docDir = "/Users/jeff/Desktop/doc/ProtoDocDiff_index"
+	docDir = "/Users/jeff/myself/doc/ProtoDocDiff_index"
 
 	// Consul转发 地址
 	consulAddr = "http://192.168.150.9:8080/ConsulRun"
